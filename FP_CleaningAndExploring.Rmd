@@ -1,0 +1,63 @@
+---
+title: "Final Project: Data Cleaning and Exploration"
+author: "Lucy Shichman"
+date: "2024-07-22"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+# STAT 6021 Final Project: Predicting Alzheimer's Diagnosis
+
+## Data Cleaning
+### source: <https://www.kaggle.com/datasets/rabieelkharoua/alzheimers-disease-dataset?resource=download>
+```{r, echo=FALSE}
+library(tidyverse)
+```
+
+```{r}
+alz_data = read.csv("/Users/lucyshichman/Documents/MSDS/STAT6021/alzheimer-linear-regression/alzheimers_disease_data.csv")
+```
+
+Dropping column with undisclosed classified info:
+```{r}
+alz_data = alz_data[,-35]
+```
+
+Creating version of data w/ numerically encoding variables converted to categorical:
+```{r}
+alz_cat_data = alz_data %>%
+  mutate(Gender = ifelse(Gender == 0,"M","F")) %>%
+  mutate(Ethnicity = ifelse(Ethnicity == 0, "Caucasian",
+                     ifelse(Ethnicity == 1, "African American",
+                     ifelse(Ethnicity == 2, "Asian", "Other")))) %>%
+  mutate(EducationLevel = ifelse(EducationLevel == 0, "None",
+                          ifelse(EducationLevel == 1, "High School",
+                          ifelse(EducationLevel == 2, "Bachelor's", "Higher")))) %>%
+  mutate(Smoking = ifelse(Smoking == 0, "No", "Yes")) %>%
+  mutate(FamilyHistoryAlzheimers = ifelse(FamilyHistoryAlzheimers == 0, "No", "Yes")) %>%
+  mutate(CardiovascularDisease = ifelse(CardiovascularDisease == 0, "No", "Yes")) %>%
+  mutate(Diabetes = ifelse(Diabetes == 0, "No", "Yes")) %>%
+  mutate(Depression = ifelse(Depression == 0, "No", "Yes")) %>%
+  mutate(HeadInjury = ifelse(HeadInjury == 0, "No", "Yes")) %>%
+  mutate(Hypertension = ifelse(Hypertension == 0, "No", "Yes")) %>%
+  mutate(MemoryComplaints = ifelse(MemoryComplaints == 0, "No", "Yes")) %>%
+  mutate(BehavioralProblems = ifelse(BehavioralProblems == 0, "No", "Yes")) %>%
+  mutate(Confusion = ifelse(Confusion == 0, "No", "Yes")) %>%
+  mutate(Disorientation = ifelse(Disorientation == 0, "No", "Yes")) %>%
+  mutate(PersonalityChanges = ifelse(PersonalityChanges == 0, "No", "Yes")) %>%
+  mutate(DifficultyCompletingTasks = ifelse(DifficultyCompletingTasks == 0, "No", "Yes")) %>%
+  mutate(Forgetfulness = ifelse(Forgetfulness == 0, "No", "Yes")) %>%
+  mutate(Diagnosis = ifelse(Diagnosis == 0, "Negative", "Positive"))
+  
+```
+
+## Summarizing and Visualizing
+```{r}
+# correlation matrix of clinical measurements and MMSE score
+cor_matrix = cor(alz_cat_data[,c(18,19,20,21,22,23,24)])
+cor_matrix
+```
+
