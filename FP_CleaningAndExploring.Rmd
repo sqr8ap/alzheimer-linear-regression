@@ -15,6 +15,7 @@ knitr::opts_chunk$set(echo = TRUE)
 ### source: <https://www.kaggle.com/datasets/rabieelkharoua/alzheimers-disease-dataset?resource=download>
 ```{r, echo=FALSE}
 library(tidyverse)
+library(ggcorrplot)
 ```
 
 ```{r}
@@ -56,8 +57,31 @@ alz_cat_data = alz_data %>%
 
 ## Summarizing and Visualizing
 ```{r}
-# correlation matrix of clinical measurements and MMSE score
-cor_matrix = cor(alz_cat_data[,c(18,19,20,21,22,23,24)])
-cor_matrix
+# correlation matrix of all potential numerical predictors and response variable MMSE
+alz_cat_data2 = alz_cat_data[,c('MMSE','Age','BMI','AlcoholConsumption','PhysicalActivity',
+                                 'DietQuality','SleepQuality','SystolicBP','DiastolicBP',
+                                 'CholesterolTotal','CholesterolLDL','CholesterolHDL',
+                                 'CholesterolTriglycerides','FunctionalAssessment',
+                                 'ADL')]
+
+cor_mat = round(cor(alz_cat_data2),2)
+ggcorrplot(cor_mat, lab=TRUE, lab_size=2, tl.cex = 10, method = "square")+
+  scale_fill_gradient2(limits = c(-0.2, 0.2), low = "blue", mid = "white", high = "red", midpoint = 0, space = "Lab", name = "Correlation")
+```
+```{r}
+# Scatter plots of numerical predictors vs response
+long_format_data = gather(alz_cat_data, key="predictor", value ="value", 
+                   Age, BMI, AlcoholConsumption, PhysicalActivity, DietQuality, SleepQuality, SystolicBP, 
+                   DiastolicBP, CholesterolTotal, CholesterolLDL, CholesterolHDL, CholesterolTriglycerides,
+                   FunctionalAssessment,ADL)
+
+ggplot(long_format_data, aes(x=value, y=MMSE, color=predictor)) +
+  geom_point(size=0.1)+
+  facet_wrap(~predictor, scales = "free_x", ncol=4) #frees x axis to look at range of all distinct predictors
+```
+
+# Building MLR model
+```{r}
+
 ```
 
