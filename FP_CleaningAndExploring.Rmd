@@ -82,6 +82,78 @@ ggplot(long_format_data, aes(x=value, y=MMSE, color=predictor)) +
 
 # Building MLR model
 ```{r}
-
+# MLR model with all possible numerical predictors
+model = lm(MMSE~Age+BMI+AlcoholConsumption+PhysicalActivity+DietQuality+SleepQuality+SystolicBP+
+             DiastolicBP+CholesterolTotal+CholesterolLDL+CholesterolHDL+CholesterolTriglycerides+
+             FunctionalAssessment+ADL, data=alz_cat_data)
+summary(model)
 ```
+```{r}
+# Preform log transformations
+alz_log_data = mutate(alz_cat_data, log_Age = log(Age), 
+                                    log_BMI = log(BMI),
+                                    log_AlcoholConsumption = log(AlcoholConsumption),
+                      log_PhysicalActivity = log(PhysicalActivity),
+                      log_DietQuality = log(DietQuality),
+                      log_SleepQuality = log(SleepQuality),
+                      log_SystolicBP = log(SystolicBP),
+                      log_DiastolicBP = log(DiastolicBP),
+                      log_CholesterolTotal = log(CholesterolTotal),
+                      log_CholesterolLDL = log(CholesterolLDL),
+                      log_CholesterolHDL = log(CholesterolHDL),
+                      log_CholesterolTriglycerides = log (CholesterolTriglycerides),
+                      log_FunctionalAssessment = log(FunctionalAssessment),
+                      log_ADL = log(ADL),
+                      log_MMSE = log(MMSE))
+
+model_log = lm(log_MMSE~log_Age+log_BMI+log_AlcoholConsumption+log_PhysicalActivity+log_DietQuality+log_SleepQuality+log_SystolicBP+
+             log_DiastolicBP+log_CholesterolTotal+log_CholesterolLDL+log_CholesterolHDL+log_CholesterolTriglycerides+
+             log_FunctionalAssessment+log_ADL, data=alz_log_data)
+summary(model_log)
+```
+
+```{r}
+# Using AIC for variable selection
+aic = stepAIC(model_log, direction='both')
+summary(aic)
+```
+```{r}
+# look at residual plot
+alz_log_data2 = mutate(alz_log_data, pred=fitted(model_log), resid=residuals(model_log))
+ggplot(alz_log_data2, aes(x=pred, y=resid))+
+  geom_point()+
+  geom_hline(yintercept =0, color="red")
+```
+```{r}
+# QQ plot: checking normality assumption, looking at distribution of residuals
+ggplot(alz_log_data2, aes(sample=resid)) +
+  stat_qq() +
+  stat_qq_line(color="red")
+```
+
+```{r}
+# Trying lasso regularization
+library(glmnet)
+
+predictors = as.matrix(alz_cat_data[, c("Age","BMI","AlcoholConsumption","PhysicalActivity","DietQuality","SleepQuality","SystolicBP",
+             "DiastolicBP","CholesterolTotal","CholesterolLDL","CholesterolHDL","CholesterolTriglycerides","FunctionalAssessment","ADL")])
+response = alz_cat_data$MMSE
+
+lasso_model = glmnet(predictors, response, family = "gaussian")
+```
+
+```{r}
+# Perform cross-validation
+cv_model <- cv.glmnet(predictors, response, alpha = 1, family = "gaussian")
+
+# Best lambda value
+best_lambda <- cv_model$lambda.min
+
+# Coefficients at best lambda
+best_coefficients <- coef(cv_model, s = "lambda.min")
+
+# Plot cross-validation error curve
+plot(cv_model)
+```
+
 
