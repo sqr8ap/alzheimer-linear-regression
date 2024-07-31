@@ -57,7 +57,7 @@ alz_cat_data = alz_data %>%
 
 ## Summarizing and Visualizing
 ```{r}
-# correlation matrix of all potential numerical predictors and response variable MMSE
+# correlation matrix of all potential predictors and response variable MMSE
 alz_cat_data2 = alz_cat_data[,c('MMSE','Age','BMI','AlcoholConsumption','PhysicalActivity',
                                  'DietQuality','SleepQuality','SystolicBP','DiastolicBP',
                                  'CholesterolTotal','CholesterolLDL','CholesterolHDL',
@@ -76,7 +76,7 @@ long_format_data = gather(alz_cat_data, key="predictor", value ="value",
                    FunctionalAssessment,ADL)
 
 ggplot(long_format_data, aes(x=value, y=MMSE, color=predictor)) +
-  geom_point(size=0.1)+
+  geom_point(size=0.01)+
   facet_wrap(~predictor, scales = "free_x", ncol=4) #frees x axis to look at range of all distinct predictors
 ```
 
@@ -85,9 +85,18 @@ ggplot(long_format_data, aes(x=value, y=MMSE, color=predictor)) +
 # MLR model with all possible numerical predictors
 model = lm(MMSE~Age+BMI+AlcoholConsumption+PhysicalActivity+DietQuality+SleepQuality+SystolicBP+
              DiastolicBP+CholesterolTotal+CholesterolLDL+CholesterolHDL+CholesterolTriglycerides+
-             FunctionalAssessment+ADL, data=alz_cat_data)
+             FunctionalAssessment+ADL+
+             Gender+Ethnicity+EducationLevel+Smoking+FamilyHistoryAlzheimers+CardiovascularDisease+
+             Diabetes+Depression+HeadInjury+Hypertension+MemoryComplaints+BehavioralProblems+
+             Confusion+Disorientation+PersonalityChanges+DifficultyCompletingTasks+Forgetfulness,data=alz_cat_data)
 summary(model)
 ```
+```{r}
+# Variable selection
+aic = stepAIC(model, direction='both', trace=F)
+summary(aic)
+```
+
 ```{r}
 # Preform log transformations
 alz_log_data = mutate(alz_cat_data, log_Age = log(Age), 
@@ -106,17 +115,43 @@ alz_log_data = mutate(alz_cat_data, log_Age = log(Age),
                       log_ADL = log(ADL),
                       log_MMSE = log(MMSE))
 
-model_log = lm(log_MMSE~log_Age+log_BMI+log_AlcoholConsumption+log_PhysicalActivity+log_DietQuality+log_SleepQuality+log_SystolicBP+
+model_log = lm(MMSE~log_Age+log_BMI+log_AlcoholConsumption+log_PhysicalActivity+log_DietQuality+log_SleepQuality+log_SystolicBP+
              log_DiastolicBP+log_CholesterolTotal+log_CholesterolLDL+log_CholesterolHDL+log_CholesterolTriglycerides+
-             log_FunctionalAssessment+log_ADL, data=alz_log_data)
+             log_FunctionalAssessment+log_ADL+
+             Gender+Ethnicity+EducationLevel+Smoking+FamilyHistoryAlzheimers+CardiovascularDisease+
+             Diabetes+Depression+HeadInjury+Hypertension+MemoryComplaints+BehavioralProblems+
+             Confusion+Disorientation+PersonalityChanges+DifficultyCompletingTasks+Forgetfulness, data=alz_log_data)
 summary(model_log)
 ```
-
 ```{r}
+# ANOVA test for log transformed variables
+anov_log = aov(log_MMSE~log_Age+log_BMI+log_AlcoholConsumption+log_PhysicalActivity+log_DietQuality+log_SleepQuality+log_SystolicBP+
+             log_DiastolicBP+log_CholesterolTotal+log_CholesterolLDL+log_CholesterolHDL+log_CholesterolTriglycerides+
+             log_FunctionalAssessment+log_ADL+
+             Gender+Ethnicity+EducationLevel+Smoking+FamilyHistoryAlzheimers+CardiovascularDisease+
+             Diabetes+Depression+HeadInjury+Hypertension+MemoryComplaints+BehavioralProblems+
+             Confusion+Disorientation+PersonalityChanges+DifficultyCompletingTasks+Forgetfulness, data=alz_log_data)
+summary(anov_log)
+```
+
+```{r, trace=0}
 # Using AIC for variable selection
-aic = stepAIC(model_log, direction='both')
+aic = stepAIC(model_log, direction='both', trace=F)
 summary(aic)
 ```
+```{r}
+# finding VIFs values for AIC identified predictors
+vif(aic)
+```
+```{r}
+# model with three variables identified by AIC
+mod = lm(MMSE~log_DiastolicBP+Gender+Disorientation, data=alz_log_data)
+summary(mod)
+```
+```{r}
+# residuals for  variable model
+```
+
 ```{r}
 # look at residual plot
 alz_log_data2 = mutate(alz_log_data, pred=fitted(model_log), resid=residuals(model_log))
