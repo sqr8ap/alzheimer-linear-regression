@@ -16,6 +16,8 @@ knitr::opts_chunk$set(echo = TRUE)
 ```{r, echo=FALSE}
 library(tidyverse)
 library(ggcorrplot)
+library(MASS)
+library(broom)
 ```
 
 ```{r}
@@ -81,6 +83,7 @@ ggplot(long_format_data, aes(x=value, y=MMSE, color=predictor)) +
 ```
 
 # Building MLR model
+
 ```{r}
 # MLR model with all possible numerical predictors
 model = lm(MMSE~Age+BMI+AlcoholConsumption+PhysicalActivity+DietQuality+SleepQuality+SystolicBP+
@@ -88,15 +91,15 @@ model = lm(MMSE~Age+BMI+AlcoholConsumption+PhysicalActivity+DietQuality+SleepQua
              FunctionalAssessment+ADL+
              Gender+Ethnicity+EducationLevel+Smoking+FamilyHistoryAlzheimers+CardiovascularDisease+
              Diabetes+Depression+HeadInjury+Hypertension+MemoryComplaints+BehavioralProblems+
-             Confusion+Disorientation+PersonalityChanges+DifficultyCompletingTasks+Forgetfulness,data=alz_cat_data)
+             Confusion+Disorientation+PersonalityChanges+DifficultyCompletingTasks+Forgetfulness, data=alz_cat_data)
 summary(model)
 ```
+
 ```{r}
 # Variable selection
 aic = stepAIC(model, direction='both', trace=F)
 summary(aic)
 ```
-
 ```{r}
 # Preform log transformations
 alz_log_data = mutate(alz_cat_data, log_Age = log(Age), 
@@ -115,6 +118,7 @@ alz_log_data = mutate(alz_cat_data, log_Age = log(Age),
                       log_ADL = log(ADL),
                       log_MMSE = log(MMSE))
 
+# keep response, log transform all predictors
 model_log = lm(MMSE~log_Age+log_BMI+log_AlcoholConsumption+log_PhysicalActivity+log_DietQuality+log_SleepQuality+log_SystolicBP+
              log_DiastolicBP+log_CholesterolTotal+log_CholesterolLDL+log_CholesterolHDL+log_CholesterolTriglycerides+
              log_FunctionalAssessment+log_ADL+
@@ -124,18 +128,23 @@ model_log = lm(MMSE~log_Age+log_BMI+log_AlcoholConsumption+log_PhysicalActivity+
 summary(model_log)
 ```
 ```{r}
-# ANOVA test for log transformed variables
-anov_log = aov(log_MMSE~log_Age+log_BMI+log_AlcoholConsumption+log_PhysicalActivity+log_DietQuality+log_SleepQuality+log_SystolicBP+
-             log_DiastolicBP+log_CholesterolTotal+log_CholesterolLDL+log_CholesterolHDL+log_CholesterolTriglycerides+
-             log_FunctionalAssessment+log_ADL+
-             Gender+Ethnicity+EducationLevel+Smoking+FamilyHistoryAlzheimers+CardiovascularDisease+
-             Diabetes+Depression+HeadInjury+Hypertension+MemoryComplaints+BehavioralProblems+
-             Confusion+Disorientation+PersonalityChanges+DifficultyCompletingTasks+Forgetfulness, data=alz_log_data)
-summary(anov_log)
+# Residual plot with all log transformed and categorical predictors 
+alz_log_data_fitted = mutate(alz_log_data, pred=fitted(model_log), resid=residuals(model_log))
+
+ggplot(alz_log_data_fitted, aes(x=pred, y=resid))+
+  geom_point()+
+  geom_hline(yintercept =0, color="red")
+```
+```{r}
+# QQ plot with all log transformed and categorical predictors
+ggplot(alz_log_data_fitted, aes(sample=resid)) +
+  stat_qq() +
+  stat_qq_line(color="red")
 ```
 
+SELECTING THE MOST SIGNIFICANT VARIABLES WITH AIC:
 ```{r, trace=0}
-# Using AIC for variable selection
+# Using AIC for variable selection for log transformed model
 aic = stepAIC(model_log, direction='both', trace=F)
 summary(aic)
 ```
@@ -145,26 +154,112 @@ vif(aic)
 ```
 ```{r}
 # model with three variables identified by AIC
-mod = lm(MMSE~log_DiastolicBP+Gender+Disorientation, data=alz_log_data)
-summary(mod)
+selected_mod = lm(MMSE~log_DiastolicBP+Gender+Disorientation, data=alz_log_data)
+summary(selected_mod)
 ```
 ```{r}
-# residuals for  variable model
-```
-
-```{r}
-# look at residual plot
-alz_log_data2 = mutate(alz_log_data, pred=fitted(model_log), resid=residuals(model_log))
-ggplot(alz_log_data2, aes(x=pred, y=resid))+
+# residuals for AIC log transformed model:
+alz_log_data_selected_fitted = mutate(alz_log_data, pred=fitted(selected_mod), resid=residuals(selected_mod))
+ggplot(alz_log_data_selected_fitted , aes(x=pred, y=resid))+
   geom_point()+
   geom_hline(yintercept =0, color="red")
 ```
 ```{r}
 # QQ plot: checking normality assumption, looking at distribution of residuals
-ggplot(alz_log_data2, aes(sample=resid)) +
+ggplot(alz_log_data_selected_fitted , aes(sample=resid)) +
   stat_qq() +
   stat_qq_line(color="red")
 ```
+LOOKING FOR OUTLIERS, LEVERGE POINTS, INFLUENTIAL POINTS
+```{r}
+diagnostics = selected_mod%>%
+  augment(data = alz_log_data)
+
+outliers = filter(diagnostics, abs(.std.resid)>3)
+outliers # no outliers!
+```
+```{r}
+leverage = filter(diagnostics, .hat>2*(3+1)/nrow(alz_log_data))
+nrow(leverage) # 163 influential points
+```
+```{r}
+influence = filter(diagnostics, .cooksd>4/nrow(alz_log_data))
+nrow(influence) # 64 influential points
+```
+
+
+```{r}
+# investigating overlap between leverage points and influential points
+
+common_values <- inner_join(influence, leverage, by = "PatientID")
+common_values%>%
+  dplyr::select(PatientID, .hat.x, .cooksd.x) 
+
+# 29 observations both influential and leverage points, trim these
+```
+```{r}
+# trimming common values from log transformed data
+alz_log_data_trimmed = anti_join(alz_log_data, common_values, by = "PatientID")
+```
+
+```{r}
+# Re-try model!
+model_log_trimmed = lm(MMSE~log_Age+log_BMI+log_AlcoholConsumption+log_PhysicalActivity+log_DietQuality+log_SleepQuality+log_SystolicBP+
+             log_DiastolicBP+log_CholesterolTotal+log_CholesterolLDL+log_CholesterolHDL+log_CholesterolTriglycerides+
+             log_FunctionalAssessment+log_ADL+
+             Gender+Ethnicity+EducationLevel+Smoking+FamilyHistoryAlzheimers+CardiovascularDisease+
+             Diabetes+Depression+HeadInjury+Hypertension+MemoryComplaints+BehavioralProblems+
+             Confusion+Disorientation+PersonalityChanges+DifficultyCompletingTasks+Forgetfulness, data=alz_log_data_trimmed)
+
+aic = stepAIC(model_log_trimmed, direction='both', trace=F)
+summary(aic)
+```
+
+```{r}
+# trimmed model with three variables identified by AIC
+trimmed_selected_mod = lm(MMSE~log_DiastolicBP+PersonalityChanges+Disorientation, data=alz_log_data_trimmed)
+summary(trimmed_selected_mod)
+```
+```{r}
+# summarizing models 
+summary_table <- data.frame(
+  Model = c('all numerical and categorical predictors',
+            'log transformations',
+            'AIC selected predictors from transformed model',
+            'AIC selected predictors from transformed model trimmed for influential/leverage points'
+            ),
+  PValue = c(0.97, 0.9698, 0.0992, 0.03919),
+  AdjustedR2 = c(-0.006573, -0.006564, 0.001523, 0.002528),
+  ResidSE = c(8.641,8.641,8.607,8.533)
+)
+summary_table
+```
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 ```{r}
 # Trying lasso regularization
