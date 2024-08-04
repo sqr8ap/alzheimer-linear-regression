@@ -17,7 +17,10 @@ knitr::opts_chunk$set(echo = TRUE)
 library(tidyverse)
 library(ggcorrplot)
 library(MASS)
+<<<<<<< HEAD
 library(broom)
+=======
+>>>>>>> ba95c02190bccf9180547646004f33b4f87c2bb7
 ```
 
 ```{r}
