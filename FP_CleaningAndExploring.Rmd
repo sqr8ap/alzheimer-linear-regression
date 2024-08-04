@@ -17,10 +17,7 @@ knitr::opts_chunk$set(echo = TRUE)
 library(tidyverse)
 library(ggcorrplot)
 library(MASS)
-<<<<<<< HEAD
 library(broom)
-=======
->>>>>>> ba95c02190bccf9180547646004f33b4f87c2bb7
 ```
 
 ```{r}
@@ -118,8 +115,12 @@ alz_log_data = mutate(alz_cat_data, log_Age = log(Age),
                       log_CholesterolHDL = log(CholesterolHDL),
                       log_CholesterolTriglycerides = log (CholesterolTriglycerides),
                       log_FunctionalAssessment = log(FunctionalAssessment),
-                      log_ADL = log(ADL),
-                      log_MMSE = log(MMSE))
+                      log_ADL = log(ADL))
+
+alz_log_data = subset(alz_log_data, select = -c(Age,BMI,AlcoholConsumption,PhysicalActivity,
+                                               DietQuality,SleepQuality,SystolicBP,DiastolicBP,
+                                               CholesterolTotal, CholesterolLDL,CholesterolHDL,
+                                               CholesterolTriglycerides,FunctionalAssessment,ADL))
 
 # keep response, log transform all predictors
 model_log = lm(MMSE~log_Age+log_BMI+log_AlcoholConsumption+log_PhysicalActivity+log_DietQuality+log_SleepQuality+log_SystolicBP+
@@ -258,10 +259,7 @@ trimmed_selected_mod2$results$MAE
 LASSO REGULARIZATION:
 ```{r}
 # take out diagnosis
-alz_cat_data3 = subset(alz_log_data, select = -c(Age,BMI,AlcoholConsumption,PhysicalActivity,DietQuality,
-                                                 SleepQuality,SystolicBP,DiastolicBP,CholesterolTotal,
-                                                 CholesterolLDL,CholesterolHDL,CholesterolTriglycerides,
-                                                 log_MMSE,ADL,Diagnosis))
+alz_cat_data3 = subset(alz_cat_data, select = -c(Diagnosis))
 
 X = model.matrix(MMSE~0+.,data=alz_cat_data3) # the ~0 gets rid of all 1s in order to use glmnet
 y = alz_cat_data3$MMSE # response variable
@@ -278,14 +276,24 @@ plot(rmodel, label=T, xvar="lambda")+abline(v=log(kcvglmnet$lambda.min))
 ```
 ```{r}
 # variables that shrunk to zero last:
-# 9: Depression
-# 32: log_CholesterolTriglycerides
-# 21: DisorientationYes
-# 22: PersonalityChangeYes
+# 10: EducationLevelNone 
+# 34 DisorientationYes 
+# 35 PersonalityChangesYes 
 
-trimmed_selected_mod3 = lm(MMSE~Depression+PersonalityChanges+Disorientation+log_CholesterolTriglycerides, data=alz_log_data_trimmed)
+trimmed_selected_mod3 = lm(MMSE~EducationLevel+PersonalityChanges+Disorientation, data=alz_log_data_trimmed)
 summary(trimmed_selected_mod3)
 # does not preform better than previous model
+```
+
+MAKING A PREDICTION WITH THE BEST MODEL:
+```{r}
+new_dat = data.frame(log_DiastolicBP=72,PersonalityChanges='No',Disorientation='No')
+# predicted
+predict(trimmed_selected_mod, new_dat)
+```
+```{r}
+# actual
+alz_log_data_trimmed[1,12]
 ```
 
 
