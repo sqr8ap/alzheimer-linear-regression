@@ -296,7 +296,12 @@ predict(trimmed_selected_mod, new_dat)
 alz_log_data_trimmed[1,12]
 ```
 
-
+```{r}
+# prediction interval
+predict(trimmed_selected_mod, newdata = new_dat, interval = "prediction", level=0.95)
+```
+We are 95% confident that a patient with log_DiastolicBP=72,PersonalityChanges='No',Disorientation='No' 
+has an MMSE score between -211.6598 and 34.95187.
 
 
 
