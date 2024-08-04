@@ -236,54 +236,56 @@ summary_table
 ```
 
 
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
+CROSS VALIDATION FOR BEST MODEL
 ```{r}
-# Trying lasso regularization
-library(glmnet)
+# use caret package to build and cross validate model
 
-predictors = as.matrix(alz_cat_data[, c("Age","BMI","AlcoholConsumption","PhysicalActivity","DietQuality","SleepQuality","SystolicBP",
-             "DiastolicBP","CholesterolTotal","CholesterolLDL","CholesterolHDL","CholesterolTriglycerides","FunctionalAssessment","ADL")])
-response = alz_cat_data$MMSE
+# cross validate
+control = trainControl(method = 'repeatedcv', number=5, repeats=10) #more repetitions introduce more variability
 
-lasso_model = glmnet(predictors, response, family = "gaussian")
+# create/train the model with cv built in
+trimmed_selected_mod2 = train(MMSE~log_DiastolicBP+PersonalityChanges+Disorientation, method='lm', trControl=control, data=alz_log_data_trimmed)
+
+# checking root mean square error, R2, MAE
+trimmed_selected_mod2$results$RMSE
+trimmed_selected_mod2$results$Rsquared
+trimmed_selected_mod2$results$MAE
+```
+
+LASSO REGULARIZATION:
+```{r}
+# take out diagnosis
+alz_cat_data3 = subset(alz_log_data, select = -c(Age,BMI,AlcoholConsumption,PhysicalActivity,DietQuality,
+                                                 SleepQuality,SystolicBP,DiastolicBP,CholesterolTotal,
+                                                 CholesterolLDL,CholesterolHDL,CholesterolTriglycerides,
+                                                 log_MMSE,ADL,Diagnosis))
+
+X = model.matrix(MMSE~0+.,data=alz_cat_data3) # the ~0 gets rid of all 1s in order to use glmnet
+y = alz_cat_data3$MMSE # response variable
+
+rmodel = glmnet(x=X, y=y, alpha = 1)
+
+kcvglmnet = cv.glmnet(x=X, y=y, alpha =1, nfolds=5)
+
+predict(rmodel, type="coefficients", s=kcvglmnet$lambda.min, newx = X[1:2,])
 ```
 
 ```{r}
-# Perform cross-validation
-cv_model <- cv.glmnet(predictors, response, alpha = 1, family = "gaussian")
-
-# Best lambda value
-best_lambda <- cv_model$lambda.min
-
-# Coefficients at best lambda
-best_coefficients <- coef(cv_model, s = "lambda.min")
-
-# Plot cross-validation error curve
-plot(cv_model)
+plot(rmodel, label=T, xvar="lambda")+abline(v=log(kcvglmnet$lambda.min))
 ```
+```{r}
+# variables that shrunk to zero last:
+# 9: Depression
+# 32: log_CholesterolTriglycerides
+# 21: DisorientationYes
+# 22: PersonalityChangeYes
+
+trimmed_selected_mod3 = lm(MMSE~Depression+PersonalityChanges+Disorientation+log_CholesterolTriglycerides, data=alz_log_data_trimmed)
+summary(trimmed_selected_mod3)
+# does not preform better than previous model
+```
+
+
+
 
 
