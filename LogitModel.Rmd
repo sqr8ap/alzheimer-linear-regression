@@ -58,8 +58,6 @@ No difference.
 
 ## Construct the logit model
 
-### Pre log transformations
-
 First with all predictors, no variable transformations:
 ```{r}
 mod1 <- glm(Diagnosis~., alz_cat_data, family='binomial')
@@ -79,128 +77,61 @@ summary(aic)
 ```
 
 
-### With log tranformations
-
+## Incorporate cross validation
 ```{r}
-alz_log_data = mutate(alz_cat_data,
-                      log_Age = log(Age), 
-                      log_BMI = log(BMI),
-                      log_AlcoholConsumption = log(AlcoholConsumption),
-                      log_PhysicalActivity = log(PhysicalActivity),
-                      log_DietQuality = log(DietQuality),
-                      log_SleepQuality = log(SleepQuality),
-                      log_SystolicBP = log(SystolicBP),
-                      log_DiastolicBP = log(DiastolicBP),
-                      log_CholesterolTotal = log(CholesterolTotal),
-                      log_CholesterolLDL = log(CholesterolLDL),
-                      log_CholesterolHDL = log(CholesterolHDL),
-                      log_CholesterolTriglycerides = log(CholesterolTriglycerides),
-                      log_MMSE = log(MMSE),
-                      log_FunctionalAssessment = log(FunctionalAssessment),
-                      log_ADL = log(ADL))
+library(caret)
+alz_cat_data <- alz_cat_data%>%
+  mutate(Diagnosis_cat = ifelse(Diagnosis==1,'Yes','No'))
+ctrl <- trainControl(method='cv',
+                            number=10,
+                            summaryFunction=twoClassSummary,
+                            classProbs=TRUE,
+                            savePredictions=TRUE)
 
-alz_log_data = subset(alz_log_data, select = -c(Age,BMI,AlcoholConsumption,PhysicalActivity,
-                                               DietQuality,SleepQuality,SystolicBP,DiastolicBP,
-                                               CholesterolTotal, CholesterolLDL,CholesterolHDL,
-                                               CholesterolTriglycerides,MMSE,FunctionalAssessment,ADL))
+mod_cv <- train(Diagnosis_cat~.-Diagnosis, data=alz_cat_data, method='glmStepAIC', family='binomial',
+                trControl=ctrl, metric='ROC', trace=FALSE)
+summary(mod_cv)
 ```
 
 
-Model with all log predictors:
+## Assess model performance
 ```{r}
-mod11 <- glm(Diagnosis~., alz_log_data, family='binomial')
-summary(mod11)
+predictions <- mod_cv$pred
 ```
 
-Using AIC to select variables:
 ```{r}
-aic2 = MASS::stepAIC(mod11, direction='both', trace=F)
-summary(aic2)
+table(predictions$pred, predictions$obs) # cross validated confusion matrix
 ```
 
-
-## Moving forward without log transformations
-
-The AICs for the previous models (pre log transformations) are better, so we'll go with 'aic' (defined above) as our best model for now. 
 ```{r}
-# Define model with AIC selected predictors
-aic_mod <- glm(Diagnosis~Age+Smoking+SleepQuality+HeadInjury+CholesterolLDL+
-                CholesterolHDL+MMSE+FunctionalAssessment+MemoryComplaints+BehavioralProblems+ADL,
-                alz_cat_data, family='binomial')
-summary(aic_mod)
+library(pROC)
+
+my_roc <- roc(predictions$obs, predictions$Yes)
+
+roc_dat <- data.frame(TPR=my_roc$sensitivities, FPR=1-my_roc$specificities)
+ggplot(roc_dat, aes(x=FPR, y=TPR))+geom_line(color='lightpink')+theme_minimal()
 ```
 
-
-VIFs:
+## Linearity assumption
 ```{r}
-car::vif(aic_mod)
+alz_cat_data <- alz_cat_data%>%
+  mutate(prob=predict(mod_cv$finalModel, type='response'), log_odds=log(prob/(1-prob)))
 ```
 
-Adding interaction effects:
 ```{r}
-aic_mod2 <- glm(Diagnosis~(Age+Smoking+SleepQuality+HeadInjury+CholesterolLDL+CholesterolHDL
-                +MMSE+FunctionalAssessment+MemoryComplaints+BehavioralProblems+ADL)^2,
-                alz_cat_data, family='binomial')
-summary(aic_mod2)
-```
-
-Let's use StepAIC again to refine this new set of predictors:
-```{r}
-selected_model = MASS::stepAIC(aic_mod2, direction='both', trace=F)
-summary(selected_model)
-```
-This is the lowest AIC we've achieved thus far, so we'll move forward with this model. 
-
-
-## Residual plot
-```{r}
-# I'm not sure if residual plots and QQ plots are required for the logit model, but I made them just in case
-## I don't think the same principles apply when looking at logistic residuals, we could ask him about what's required to show that we've met model assumptions for the logistic model
-alz_cat_data_pred <- alz_cat_data%>%
-  mutate(pred = selected_model$fitted.values, resid = selected_model$residuals)
-
-ggplot(alz_cat_data_pred , aes(x=pred, y=resid))+
-  geom_point()+
-  geom_hline(yintercept =0, color="red")
-```
-
-## QQ plot
-```{r}
-ggplot(alz_cat_data_pred, aes(sample=resid)) +
-  stat_qq() +
-  stat_qq_line(color="red")
-```
-
-## RMSE, R squared, MAE
-```{r}
-caret::RMSE(alz_cat_data_pred$pred, alz_cat_data_pred$Diagnosis)
-```
-```{r}
-caret::R2(alz_cat_data_pred$pred, alz_cat_data_pred$Diagnosis)
-```
-```{r}
-caret::MAE(alz_cat_data_pred$pred, alz_cat_data_pred$Diagnosis)
+# Get predictors in final model
+mod_cv$finalModel
 ```
 
 
-## Calculate accuracy
-
-I'm not sure how else to interpret the model, so I'm going to encode all predictions above 0.5 as 1 and all predictions below 0.5 as 0. Then we can calculate the model's accuracy. 
 ```{r}
-alz_cat_data_pred <- alz_cat_data_pred%>%
-  mutate(predicted_diagnosis = ifelse(pred >= 0.5, 1, 0))
+# Scatter plots of log odds vs numerical predictors
+long <- gather(alz_cat_data, key="predictor", value ="value", 
+                   Age, SleepQuality, CholesterolLDL, CholesterolHDL, MMSE, FunctionalAssessment, ADL)
 
-# Calculate accuracy
-table(alz_cat_data_pred$Diagnosis, alz_cat_data_pred$predicted_diagnosis)
+ggplot(long, aes(x=value, y=log_odds, color=predictor))+
+  geom_point(size=0.01)+
+  facet_wrap(~predictor, scales = "free_x", ncol=4)+theme_minimal()
 ```
-Accuracy = (1297+588) / (1297+588+172+92) = 87.7% based on a threshold of 0.5. 
-
-As a comparison, the SVM classification model yielded an accuracy of 93.8%. SVMs aim to identify the hyperplane that best separates the data into different classes. This approach works well with high dimensional data where the separation between classes is not obvious. 
-
-
-## Removing outliers/influential points/leverage points
-
-## Cross validation
-
 
 
