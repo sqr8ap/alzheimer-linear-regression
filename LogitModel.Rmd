@@ -8,6 +8,7 @@ output: html_document
 ```{r setup, include=FALSE}
 knitr::opts_chunk$set(echo = TRUE)
 library(tidyverse)
+library(pROC)
 ```
 
 ```{r}
@@ -94,14 +95,61 @@ summary(mod_cv)
 ```
 
 
+```{r}
+# Now drop variables that were insignificant 
+
+library(caret)
+alz_cat_data <- alz_cat_data%>%
+  mutate(Diagnosis_cat = ifelse(Diagnosis==1,'Yes','No'))
+ctrl <- trainControl(method='cv',
+                            number=10,
+                            summaryFunction=twoClassSummary,
+                            classProbs=TRUE,
+                            savePredictions=TRUE)
+
+mod_cv2 <- train(Diagnosis_cat~CholesterolLDL+MMSE+FunctionalAssessment+MemoryComplaints+BehavioralProblems+ADL, data=alz_cat_data, method='glmStepAIC', family='binomial',
+                trControl=ctrl, metric='ROC', trace=FALSE)
+summary(mod_cv2) # FINAL MODEL
+```
+
+
 ## Assess model performance
 ```{r}
-predictions <- mod_cv$pred
+predictions <- mod_cv2$pred
 ```
 
 ```{r}
 table(predictions$pred, predictions$obs) # cross validated confusion matrix
 ```
+
+```{r}
+roc(predictions$obs, predictions$Yes)
+```
+
+
+
+Accuracy: (1245+564) / (1246+564+196+144) = 84.1%
+AUC: 0.9029
+
+
+```{r}
+predss <- predict(mod_cv2, alz_cat_data[1,], alpha=0.95)
+actuals <- alz_cat_data[1,33]
+
+preddf <- data.frame(Model_Predictions=predss, Actual_Values=actuals)
+preddf
+```
+
+Model written out:
+$$ logit(p) = 3.995 - 0.003(CholesterolLDL) +.005(CholesterolHDL) - 0.107(MMSE) - 0.447(FunctionalAssessment) + 2.593(I_{MemoryComplaintsYes}) + 2.483(I_{BehavioralProblemsYes}) - 0.417(ADL) $$
+
+
+```{r}
+confusionMatrix(predictions$obs, predictions$pred)
+```
+
+F-1 = 2 * (0.7421053*0.864) / (0.7421053+0.864)
+precision = (564 / (564 + 196)) = 0.7421053
 
 ```{r}
 library(pROC)
@@ -115,23 +163,44 @@ ggplot(roc_dat, aes(x=FPR, y=TPR))+geom_line(color='lightpink')+theme_minimal()
 ## Linearity assumption
 ```{r}
 alz_cat_data <- alz_cat_data%>%
-  mutate(prob=predict(mod_cv$finalModel, type='response'), log_odds=log(prob/(1-prob)))
+  mutate(prob=predict(mod_cv2$finalModel, type='response'), log_odds=log(prob/(1-prob)))
 ```
 
 ```{r}
 # Get predictors in final model
-mod_cv$finalModel
+mod_cv2$finalModel
 ```
 
 
 ```{r}
 # Scatter plots of log odds vs numerical predictors
 long <- gather(alz_cat_data, key="predictor", value ="value", 
-                   Age, SleepQuality, CholesterolLDL, CholesterolHDL, MMSE, FunctionalAssessment, ADL)
+                   CholesterolLDL, CholesterolHDL, MMSE, FunctionalAssessment, ADL)
 
 ggplot(long, aes(x=value, y=log_odds, color=predictor))+
   geom_point(size=0.01)+
-  facet_wrap(~predictor, scales = "free_x", ncol=4)+theme_minimal()
+  facet_wrap(~predictor, scales = "free_x", ncol=3)+theme_minimal()+ylab('Log Odds')+xlab('Value')
 ```
+
+## Lasso
+
+```{r}
+library(glmnet)
+X <- model.matrix(Diagnosis~0+.,data=predictors) # ~0 gets rid of vector of ones in design matrix
+y <- predictors$Diagnosis
+lmodel <- glmnet(x=X, y=y, alpha=1)
+plot(lmodel, label=TRUE, xvar='lambda')+abline(v=log(kcvglmnet$lambda.1se))
+```
+
+```{r}
+order(coef(lmodel)[,50])
+```
+
+```{r}
+coef(lmodel)[,50]
+```
+
+BehavioralProblems, MemoryComplaints, FunctionalAssessment, ADL, Ethnicity, HeadInjury
+
 
 
