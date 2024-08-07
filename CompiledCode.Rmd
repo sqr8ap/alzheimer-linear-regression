@@ -1,0 +1,607 @@
+---
+title: "Compiled Code for STAT 6021 Final Project"
+author: "SQR"
+date: "2024-08-07"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+# Part 1: cleaning, exploring, multiple regression model
+
+## STAT 6021 Final Project: Predicting Alzheimer's Diagnosis
+
+## Data Cleaning
+### source: <https://www.kaggle.com/datasets/rabieelkharoua/alzheimers-disease-dataset?resource=download>
+```{r, echo=FALSE}
+library(tidyverse)
+library(ggcorrplot)
+library(MASS)
+library(broom)
+```
+
+```{r}
+alz_data = read.csv('alzheimers_disease_data.csv')
+```
+
+Dropping column with undisclosed classified info:
+```{r}
+alz_data = alz_data[,-35]
+```
+
+Creating version of data w/ numerically encoding variables converted to categorical:
+```{r}
+alz_cat_data = alz_data %>%
+  mutate(Gender = ifelse(Gender == 0,"M","F")) %>%
+  mutate(Ethnicity = ifelse(Ethnicity == 0, "Caucasian",
+                     ifelse(Ethnicity == 1, "African American",
+                     ifelse(Ethnicity == 2, "Asian", "Other")))) %>%
+  mutate(EducationLevel = ifelse(EducationLevel == 0, "None",
+                          ifelse(EducationLevel == 1, "High School",
+                          ifelse(EducationLevel == 2, "Bachelor's", "Higher")))) %>%
+  mutate(Smoking = ifelse(Smoking == 0, "No", "Yes")) %>%
+  mutate(FamilyHistoryAlzheimers = ifelse(FamilyHistoryAlzheimers == 0, "No", "Yes")) %>%
+  mutate(CardiovascularDisease = ifelse(CardiovascularDisease == 0, "No", "Yes")) %>%
+  mutate(Diabetes = ifelse(Diabetes == 0, "No", "Yes")) %>%
+  mutate(Depression = ifelse(Depression == 0, "No", "Yes")) %>%
+  mutate(HeadInjury = ifelse(HeadInjury == 0, "No", "Yes")) %>%
+  mutate(Hypertension = ifelse(Hypertension == 0, "No", "Yes")) %>%
+  mutate(MemoryComplaints = ifelse(MemoryComplaints == 0, "No", "Yes")) %>%
+  mutate(BehavioralProblems = ifelse(BehavioralProblems == 0, "No", "Yes")) %>%
+  mutate(Confusion = ifelse(Confusion == 0, "No", "Yes")) %>%
+  mutate(Disorientation = ifelse(Disorientation == 0, "No", "Yes")) %>%
+  mutate(PersonalityChanges = ifelse(PersonalityChanges == 0, "No", "Yes")) %>%
+  mutate(DifficultyCompletingTasks = ifelse(DifficultyCompletingTasks == 0, "No", "Yes")) %>%
+  mutate(Forgetfulness = ifelse(Forgetfulness == 0, "No", "Yes")) %>%
+  mutate(Diagnosis = ifelse(Diagnosis == 0, "Negative", "Positive"))
+  
+```
+
+## Summarizing and Visualizing
+```{r}
+# correlation matrix of all potential predictors and response variable MMSE
+alz_cat_data2 = alz_cat_data[,c('MMSE','Age','BMI','AlcoholConsumption','PhysicalActivity',
+                                 'DietQuality','SleepQuality','SystolicBP','DiastolicBP',
+                                 'CholesterolTotal','CholesterolLDL','CholesterolHDL',
+                                 'CholesterolTriglycerides','FunctionalAssessment',
+                                 'ADL')]
+
+cor_mat = round(cor(alz_cat_data2),2)
+ggcorrplot(cor_mat, lab=TRUE, lab_size=2, tl.cex = 10, method = "square")+
+  scale_fill_gradient2(limits = c(-0.2, 0.2), low = "blue", mid = "white", high = "red", midpoint = 0, space = "Lab", name = "Correlation")+
+  ggtitle("Correlation Plot of Numeric Variables")
+```
+```{r}
+# Scatter plots of numerical predictors vs response
+long_format_data = gather(alz_cat_data, key="predictor", value ="value", 
+                   Age, BMI, AlcoholConsumption, PhysicalActivity, DietQuality, SleepQuality, SystolicBP, 
+                   DiastolicBP, CholesterolTotal, CholesterolLDL, CholesterolHDL, CholesterolTriglycerides,
+                   FunctionalAssessment,ADL)
+
+ggplot(long_format_data, aes(x=value, y=MMSE, color=predictor)) +
+  geom_point(size=0.01)+
+  facet_wrap(~predictor, scales = "free_x", ncol=4) #frees x axis to look at range of all distinct predictors
+```
+```{r}
+# Visualization summarizing categorical variables
+
+# Reshape data from wide to long format
+df_long <- alz_cat_data %>%
+  dplyr::select(Ethnicity, Smoking, HeadInjury, MemoryComplaints, BehavioralProblems,
+    Disorientation, PersonalityChanges, Diagnosis)%>%
+  pivot_longer(cols = everything(), names_to = "Variable", values_to = "Value")
+
+df_long$Value <- factor(df_long$Value, levels = c("African American", "Asian", "Caucasian", "Other","Yes", "No", "M", "F","Positive","Negative"))
+
+# Faceted bar plot
+ggplot(df_long, aes(x = Value, fill=Value)) +
+  geom_bar() +
+  facet_wrap(~ Variable, scales = "free_x", ncol=4) +
+  theme_minimal() +
+  labs(title = "Counts of Categorical Variables",
+       x = "Category",
+       y = "Count")+
+  theme(
+    panel.spacing = unit(1, "lines"),  # Increase the space between panels
+    strip.text = element_text(size = 8, face = "bold",hjust=0),
+    axis.text.x = element_text(angle = 45, hjust = 1)
+  )
+```
+
+# Building MLR model
+
+```{r}
+# MLR model with all possible numerical predictors
+model = lm(MMSE~Age+BMI+AlcoholConsumption+PhysicalActivity+DietQuality+SleepQuality+SystolicBP+
+             DiastolicBP+CholesterolTotal+CholesterolLDL+CholesterolHDL+CholesterolTriglycerides+
+             FunctionalAssessment+ADL+
+             Gender+Ethnicity+EducationLevel+Smoking+FamilyHistoryAlzheimers+CardiovascularDisease+
+             Diabetes+Depression+HeadInjury+Hypertension+MemoryComplaints+BehavioralProblems+
+             Confusion+Disorientation+PersonalityChanges+DifficultyCompletingTasks+Forgetfulness, data=alz_cat_data)
+summary(model)
+```
+
+```{r}
+# Variable selection
+aic = stepAIC(model, direction='both', trace=F)
+summary(aic)
+```
+```{r}
+# Preform log transformations
+alz_log_data = mutate(alz_cat_data, log_Age = log(Age), 
+                                    log_BMI = log(BMI),
+                                    log_AlcoholConsumption = log(AlcoholConsumption),
+                      log_PhysicalActivity = log(PhysicalActivity),
+                      log_DietQuality = log(DietQuality),
+                      log_SleepQuality = log(SleepQuality),
+                      log_SystolicBP = log(SystolicBP),
+                      log_DiastolicBP = log(DiastolicBP),
+                      log_CholesterolTotal = log(CholesterolTotal),
+                      log_CholesterolLDL = log(CholesterolLDL),
+                      log_CholesterolHDL = log(CholesterolHDL),
+                      log_CholesterolTriglycerides = log (CholesterolTriglycerides),
+                      log_FunctionalAssessment = log(FunctionalAssessment),
+                      log_ADL = log(ADL))
+
+alz_log_data = subset(alz_log_data, select = -c(Age,BMI,AlcoholConsumption,PhysicalActivity,
+                                               DietQuality,SleepQuality,SystolicBP,DiastolicBP,
+                                               CholesterolTotal, CholesterolLDL,CholesterolHDL,
+                                               CholesterolTriglycerides,FunctionalAssessment,ADL))
+
+# keep response, log transform all predictors
+model_log = lm(MMSE~log_Age+log_BMI+log_AlcoholConsumption+log_PhysicalActivity+log_DietQuality+log_SleepQuality+log_SystolicBP+
+             log_DiastolicBP+log_CholesterolTotal+log_CholesterolLDL+log_CholesterolHDL+log_CholesterolTriglycerides+
+             log_FunctionalAssessment+log_ADL+
+             Gender+Ethnicity+EducationLevel+Smoking+FamilyHistoryAlzheimers+CardiovascularDisease+
+             Diabetes+Depression+HeadInjury+Hypertension+MemoryComplaints+BehavioralProblems+
+             Confusion+Disorientation+PersonalityChanges+DifficultyCompletingTasks+Forgetfulness, data=alz_log_data)
+summary(model_log)
+```
+```{r}
+# Residual plot with all log transformed and categorical predictors 
+alz_log_data_fitted = mutate(alz_log_data, pred=fitted(model_log), resid=residuals(model_log))
+
+ggplot(alz_log_data_fitted, aes(x=pred, y=resid))+
+  geom_point()+
+  geom_hline(yintercept =0, color="red")
+```
+```{r}
+# QQ plot with all log transformed and categorical predictors
+ggplot(alz_log_data_fitted, aes(sample=resid)) +
+  stat_qq() +
+  stat_qq_line(color="red")
+```
+
+SELECTING THE MOST SIGNIFICANT VARIABLES WITH AIC:
+```{r, trace=0}
+# Using AIC for variable selection for log transformed model
+aic = stepAIC(model_log, direction='both', trace=F)
+summary(aic)
+```
+```{r}
+# finding VIFs values for AIC identified predictors
+vif(aic)
+```
+```{r}
+# model with three variables identified by AIC
+selected_mod = lm(MMSE~log_DiastolicBP+Gender+Disorientation, data=alz_log_data)
+summary(selected_mod)
+```
+```{r}
+# residuals for AIC log transformed model:
+alz_log_data_selected_fitted = mutate(alz_log_data, pred=fitted(selected_mod), resid=residuals(selected_mod))
+ggplot(alz_log_data_selected_fitted , aes(x=pred, y=resid))+
+  geom_point()+
+  geom_hline(yintercept =0, color="red")
+```
+```{r}
+# QQ plot: checking normality assumption, looking at distribution of residuals
+ggplot(alz_log_data_selected_fitted , aes(sample=resid)) +
+  stat_qq() +
+  stat_qq_line(color="red")
+```
+LOOKING FOR OUTLIERS, LEVERGE POINTS, INFLUENTIAL POINTS
+```{r}
+diagnostics = selected_mod%>%
+  augment(data = alz_log_data)
+
+outliers = filter(diagnostics, abs(.std.resid)>3)
+outliers # no outliers!
+```
+```{r}
+leverage = filter(diagnostics, .hat>2*(3+1)/nrow(alz_log_data))
+nrow(leverage) # 163 influential points
+```
+```{r}
+influence = filter(diagnostics, .cooksd>4/nrow(alz_log_data))
+nrow(influence) # 64 influential points
+```
+
+
+```{r}
+# investigating overlap between leverage points and influential points
+
+common_values <- inner_join(influence, leverage, by = "PatientID")
+common_values%>%
+  dplyr::select(PatientID, .hat.x, .cooksd.x) 
+
+# 29 observations both influential and leverage points, trim these
+```
+```{r}
+# trimming common values from log transformed data
+alz_log_data_trimmed = anti_join(alz_log_data, common_values, by = "PatientID")
+```
+
+```{r}
+# Re-try model!
+model_log_trimmed = lm(MMSE~log_Age+log_BMI+log_AlcoholConsumption+log_PhysicalActivity+log_DietQuality+log_SleepQuality+log_SystolicBP+
+             log_DiastolicBP+log_CholesterolTotal+log_CholesterolLDL+log_CholesterolHDL+log_CholesterolTriglycerides+
+             log_FunctionalAssessment+log_ADL+
+             Gender+Ethnicity+EducationLevel+Smoking+FamilyHistoryAlzheimers+CardiovascularDisease+
+             Diabetes+Depression+HeadInjury+Hypertension+MemoryComplaints+BehavioralProblems+
+             Confusion+Disorientation+PersonalityChanges+DifficultyCompletingTasks+Forgetfulness, data=alz_log_data_trimmed)
+
+aic = stepAIC(model_log_trimmed, direction='both', trace=F)
+summary(aic)
+```
+
+```{r}
+# trimmed model with three variables identified by AIC
+trimmed_selected_mod = lm(MMSE~log_DiastolicBP+PersonalityChanges+Disorientation, data=alz_log_data_trimmed)
+summary(trimmed_selected_mod)
+```
+```{r}
+# residual plot for final model
+alz_log_data_selected_trimmed_fitted = mutate(alz_log_data_trimmed, pred=fitted(trimmed_selected_mod), resid=residuals(trimmed_selected_mod))
+ggplot(alz_log_data_selected_trimmed_fitted , aes(x=pred, y=resid))+
+  geom_point()+
+  geom_hline(yintercept =0, color="red")+
+  ggtitle(label="Residual Plot")
+```
+```{r}
+# QQ plot for final model
+ggplot(alz_log_data_selected_trimmed_fitted , aes(sample=resid)) +
+  stat_qq() +
+  stat_qq_line(color="red")+
+  ggtitle('QQ Plot')
+```
+
+
+```{r}
+# summarizing models 
+summary_table <- data.frame(
+  Model = c('all numerical and categorical predictors',
+            'log transformations',
+            'AIC selected predictors from transformed model',
+            'AIC selected predictors from transformed model trimmed for influential/leverage points'
+            ),
+  PValue = c(0.97, 0.9698, 0.0992, 0.03919),
+  AdjustedR2 = c(-0.006573, -0.006564, 0.001523, 0.002528),
+  ResidSE = c(8.641,8.641,8.607,8.533)
+)
+summary_table
+```
+
+
+CROSS VALIDATION FOR BEST MODEL
+```{r}
+# use caret package to build and cross validate model
+
+# cross validate
+control = trainControl(method = 'repeatedcv', number=5, repeats=10) #more repetitions introduce more variability
+
+# create/train the model with cv built in
+trimmed_selected_mod2 = train(MMSE~log_DiastolicBP+PersonalityChanges+Disorientation, method='lm', trControl=control, data=alz_log_data_trimmed)
+
+# checking root mean square error, R2, MAE
+trimmed_selected_mod2$results$RMSE
+trimmed_selected_mod2$results$Rsquared
+trimmed_selected_mod2$results$MAE
+```
+
+LASSO REGULARIZATION:
+```{r}
+# take out diagnosis
+alz_cat_data3 = subset(alz_cat_data, select = -c(Diagnosis))
+
+X = model.matrix(MMSE~0+.,data=alz_cat_data3) # the ~0 gets rid of all 1s in order to use glmnet
+y = alz_cat_data3$MMSE # response variable
+
+rmodel = glmnet(x=X, y=y, alpha = 1)
+
+kcvglmnet = cv.glmnet(x=X, y=y, alpha =1, nfolds=5)
+
+predict(rmodel, type="coefficients", s=kcvglmnet$lambda.min, newx = X[1:2,])
+```
+
+```{r}
+plot(rmodel, label=T, xvar="lambda")+abline(v=log(kcvglmnet$lambda.min))
+```
+```{r}
+# variables that shrunk to zero last:
+# 10: EducationLevelNone 
+# 34 DisorientationYes 
+# 35 PersonalityChangesYes 
+
+trimmed_selected_mod3 = lm(MMSE~EducationLevel+PersonalityChanges+Disorientation, data=alz_log_data_trimmed)
+summary(trimmed_selected_mod3)
+# does not preform better than previous model
+```
+
+MAKING A PREDICTION WITH THE BEST MODEL:
+```{r}
+new_dat = data.frame(log_DiastolicBP=72,PersonalityChanges='No',Disorientation='No')
+# predicted
+predict(trimmed_selected_mod, new_dat)
+```
+```{r}
+# actual
+alz_log_data_trimmed[1,12]
+```
+
+```{r}
+# prediction interval
+predict(trimmed_selected_mod, newdata = new_dat, interval = "prediction", level=0.95)
+```
+We are 95% confident that a patient with log_DiastolicBP=72,PersonalityChanges='No',Disorientation='No' 
+has an MMSE score between -211.6598 and 34.95187.
+
+
+# Part 2: logistic model
+
+
+```{r}
+knitr::opts_chunk$set(echo = TRUE)
+library(tidyverse)
+library(pROC)
+```
+
+```{r}
+alz_data <- read.csv('alzheimers_disease_data.csv')
+alz_data <- alz_data[,-c(1,35)] 
+```
+
+```{r}
+alz_cat_data = alz_data %>%
+  mutate(Gender = ifelse(Gender == 0,"M","F")) %>%
+  mutate(Ethnicity = ifelse(Ethnicity == 0, "Caucasian",
+                     ifelse(Ethnicity == 1, "African American",
+                     ifelse(Ethnicity == 2, "Asian", "Other")))) %>%
+  mutate(EducationLevel = ifelse(EducationLevel == 0, "None",
+                          ifelse(EducationLevel == 1, "High School",
+                          ifelse(EducationLevel == 2, "Bachelor's", "Higher")))) %>%
+  mutate(Smoking = ifelse(Smoking == 0, "No", "Yes")) %>%
+  mutate(FamilyHistoryAlzheimers = ifelse(FamilyHistoryAlzheimers == 0, "No", "Yes")) %>%
+  mutate(CardiovascularDisease = ifelse(CardiovascularDisease == 0, "No", "Yes")) %>%
+  mutate(Diabetes = ifelse(Diabetes == 0, "No", "Yes")) %>%
+  mutate(Depression = ifelse(Depression == 0, "No", "Yes")) %>%
+  mutate(HeadInjury = ifelse(HeadInjury == 0, "No", "Yes")) %>%
+  mutate(Hypertension = ifelse(Hypertension == 0, "No", "Yes")) %>%
+  mutate(MemoryComplaints = ifelse(MemoryComplaints == 0, "No", "Yes")) %>%
+  mutate(BehavioralProblems = ifelse(BehavioralProblems == 0, "No", "Yes")) %>%
+  mutate(Confusion = ifelse(Confusion == 0, "No", "Yes")) %>%
+  mutate(Disorientation = ifelse(Disorientation == 0, "No", "Yes")) %>%
+  mutate(PersonalityChanges = ifelse(PersonalityChanges == 0, "No", "Yes")) %>%
+  mutate(DifficultyCompletingTasks = ifelse(DifficultyCompletingTasks == 0, "No", "Yes")) %>%
+  mutate(Forgetfulness = ifelse(Forgetfulness == 0, "No", "Yes"))
+```
+
+
+Reconstruct the corrplot with MMSE included this time:
+```{r}
+numerics <- alz_data%>%
+  dplyr::select(Age, BMI, AlcoholConsumption, PhysicalActivity, DietQuality, SleepQuality, SystolicBP,
+                DiastolicBP, CholesterolTotal, CholesterolLDL, CholesterolHDL, CholesterolTriglycerides,
+                MMSE, FunctionalAssessment, ADL)
+
+cor_mat = round(cor(numerics),2)
+ggcorrplot::ggcorrplot(cor_mat, lab=TRUE, lab_size=2, tl.cex = 10, method = "square")+
+  scale_fill_gradient2(limits = c(-0.2, 0.2), low = "blue", mid = "white", high = "red", midpoint = 0, space = "Lab", name = "Correlation")
+
+```
+No difference. 
+
+
+## Construct the logit model
+
+First with all predictors, no variable transformations:
+```{r}
+mod1 <- glm(Diagnosis~., alz_cat_data, family='binomial')
+summary(mod1)
+```
+
+Reduce model to only include significant predictors; here we will only include predictors that are significant at the 0.05 level:
+```{r}
+mod2 <- glm(Diagnosis~CholesterolLDL+MMSE+FunctionalAssessment+MemoryComplaints+ADL, alz_data, family='binomial')
+summary(mod2)
+```
+
+Now using AIC to select variables:
+```{r}
+aic = MASS::stepAIC(mod1, direction='both', trace=F)
+summary(aic)
+```
+
+
+## Incorporate cross validation
+```{r}
+library(caret)
+alz_cat_data <- alz_cat_data%>%
+  mutate(Diagnosis_cat = ifelse(Diagnosis==1,'Yes','No'))
+ctrl <- trainControl(method='cv',
+                            number=10,
+                            summaryFunction=twoClassSummary,
+                            classProbs=TRUE,
+                            savePredictions=TRUE)
+
+mod_cv <- train(Diagnosis_cat~.-Diagnosis, data=alz_cat_data, method='glmStepAIC', family='binomial',
+                trControl=ctrl, metric='ROC', trace=FALSE)
+summary(mod_cv)
+```
+
+
+```{r}
+# Now drop variables that were insignificant 
+
+library(caret)
+alz_cat_data <- alz_cat_data%>%
+  mutate(Diagnosis_cat = ifelse(Diagnosis==1,'Yes','No'))
+ctrl <- trainControl(method='cv',
+                            number=10,
+                            summaryFunction=twoClassSummary,
+                            classProbs=TRUE,
+                            savePredictions=TRUE)
+
+mod_cv2 <- train(Diagnosis_cat~CholesterolLDL+MMSE+FunctionalAssessment+MemoryComplaints+BehavioralProblems+ADL, data=alz_cat_data, method='glmStepAIC', family='binomial',
+                trControl=ctrl, metric='ROC', trace=FALSE)
+summary(mod_cv2) # FINAL MODEL
+```
+
+
+## Assess model performance
+```{r}
+predictions <- mod_cv2$pred
+```
+
+```{r}
+table(predictions$pred, predictions$obs) # cross validated confusion matrix
+```
+
+```{r}
+roc(predictions$obs, predictions$Yes)
+```
+
+
+
+Accuracy: (1245+564) / (1246+564+196+144) = 84.1%
+AUC: 0.9029
+
+
+```{r}
+predss <- predict(mod_cv2, alz_cat_data[1,], alpha=0.95)
+actuals <- alz_cat_data[1,33]
+
+preddf <- data.frame(Model_Predictions=predss, Actual_Values=actuals)
+preddf
+```
+
+Model written out:
+$$ logit(p) = 3.995 - 0.003(CholesterolLDL) +.005(CholesterolHDL) - 0.107(MMSE) - 0.447(FunctionalAssessment) + 2.593(I_{MemoryComplaintsYes}) + 2.483(I_{BehavioralProblemsYes}) - 0.417(ADL) $$
+
+
+```{r}
+confusionMatrix(predictions$obs, predictions$pred)
+```
+
+F-1 = 2 * (0.7421053*0.864) / (0.7421053+0.864)
+precision = (564 / (564 + 196)) = 0.7421053
+
+```{r}
+library(pROC)
+
+my_roc <- roc(predictions$obs, predictions$Yes)
+
+roc_dat <- data.frame(TPR=my_roc$sensitivities, FPR=1-my_roc$specificities)
+ggplot(roc_dat, aes(x=FPR, y=TPR))+geom_line(color='lightpink')+theme_minimal()
+```
+
+## Linearity assumption
+```{r}
+alz_cat_data <- alz_cat_data%>%
+  mutate(prob=predict(mod_cv2$finalModel, type='response'), log_odds=log(prob/(1-prob)))
+```
+
+```{r}
+# Get predictors in final model
+mod_cv2$finalModel
+```
+
+
+```{r}
+# Scatter plots of log odds vs numerical predictors
+long <- gather(alz_cat_data, key="predictor", value ="value", 
+                   CholesterolLDL, CholesterolHDL, MMSE, FunctionalAssessment, ADL)
+
+ggplot(long, aes(x=value, y=log_odds, color=predictor))+
+  geom_point(size=0.01)+
+  facet_wrap(~predictor, scales = "free_x", ncol=3)+theme_minimal()+ylab('Log Odds')+xlab('Value')
+```
+
+## Lasso
+
+```{r}
+library(glmnet)
+X <- model.matrix(Diagnosis~0+.,data=predictors) # ~0 gets rid of vector of ones in design matrix
+y <- predictors$Diagnosis
+lmodel <- glmnet(x=X, y=y, alpha=1)
+plot(lmodel, label=TRUE, xvar='lambda')+abline(v=log(kcvglmnet$lambda.1se))
+```
+
+```{r}
+order(coef(lmodel)[,50])
+```
+
+```{r}
+coef(lmodel)[,50]
+```
+
+
+# Part 3: nonlinear models
+
+```{r}
+
+## Random forest for predicting MMSE
+library(randomForest)
+
+alz_data = read.csv('alzheimers_disease_data.csv')
+alz_data = alz_data[,-35]
+alz_data = alz_data[,-1]
+
+randomForest(MMSE~., data=alz_data, importance=TRUE, proximity=TRUE) # not much better than our linear models, RMSR of 8.2
+
+## SVM for predicting diagnosis
+library(e1071)
+
+model <- svm(Diagnosis~., alz_data, type='C-classification')
+pred <- fitted(model)
+
+table(pred, alz_data$Diagnosis) # confusion matrix
+# Accuracy: (1347+669) / (1347+669+91+42) = 93.81% of diagnoses predicted correctly
+
+alz_data_pred <- alz_data%>%
+  mutate(pred = fitted(model))
+
+
+## SVM for predicting MMSE
+model2 <- svm(MMSE~., alz_data, type='eps-regression', kernel='linear')
+pred <- fitted(model2)
+alz_data_pred <- alz_data_pred%>%
+  mutate(pred_mmse = fitted(model2))
+
+library(caret)
+RMSE(alz_data_pred$MMSE, alz_data_pred$pred_mmse)
+# 8.345
+# SVM performed better than our MLR but only by very little
+
+##################################################################################
+#
+# Results indicate that even when using alternative approaches such as the random 
+#  forest or SVM, we could not predict MMSE well with this data.
+#
+# However, the SVM model predicted diagnosis very well, with an accuracy of almost
+#  94%.
+
+```
+
+
+
+
+
+
+
+
+
+
+
